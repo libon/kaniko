@@ -56,12 +56,6 @@ func RetrieveRemoteImage(image string, opts config.RegistryOptions, customPlatfo
 
 			//extract custom path if any in all registry map and clean regToMapTo to only the registry without the path
 			custompath, regToMapTo := extractPathFromRegistryURL(regToMapTo)
-			//normalize reference is call in every fallback to ensure that the image is normalized to the new registry include the image prefix
-			ref, err = normalizeReference(ref, image, custompath)
-
-			if err != nil {
-				return nil, err
-			}
 
 			var newReg name.Registry
 			if opts.InsecurePull || opts.InsecureRegistries.Contains(regToMapTo) {
@@ -72,17 +66,22 @@ func RetrieveRemoteImage(image string, opts config.RegistryOptions, customPlatfo
 			if err != nil {
 				return nil, err
 			}
-			//ref will be already use library/ or the custom path in registry map suffix
-			ref := setNewRegistry(ref, newReg)
+			//rewrite reference is call in every fallback to ensure that the image is normalized to the new registry including the image prefix
+			var rewrittenRef name.Reference
+			rewrittenRef, err = rewriteReference(ref, newReg, custompath)
+
+			if err != nil {
+				return nil, err
+			}
 			logrus.Infof("Retrieving image %s from mapped registry %s", ref, regToMapTo)
 			retryFunc := func() (v1.Image, error) {
-				return remoteImageFunc(ref, remoteOptions(regToMapTo, opts, customPlatform)...)
+				return remoteImageFunc(rewrittenRef, remoteOptions(regToMapTo, opts, customPlatform)...)
 			}
 
 			var remoteImage v1.Image
 			var err error
 			if remoteImage, err = util.RetryWithResult(retryFunc, opts.ImageDownloadRetry, 1000); err != nil {
-				logrus.Warnf("Failed to retrieve image %s from remapped registry %s: %s. Will try with the next registry, or fallback to the original registry.", ref, regToMapTo, err)
+				logrus.Warnf("Failed to retrieve image %s from remapped registry %s: %s. Will try with the next registry, or fallback to the original registry.", rewrittenRef, regToMapTo, err)
 				continue
 			}
 
@@ -119,19 +118,30 @@ func RetrieveRemoteImage(image string, opts config.RegistryOptions, customPlatfo
 	return remoteImage, err
 }
 
-// normalizeReference adds the library/ or the {path}/ in registry map suffix to images without it.
-//
-// It is mostly useful when using a registry maps that is not able to perform
-// this fix automatically add library or the custom path on registry map.
-func normalizeReference(ref name.Reference, image string, custompath string) (name.Reference, error) {
-	if custompath == "" {
-		custompath = "library"
-	}
-	if !strings.ContainsRune(image, '/') {
-		return name.ParseReference(custompath+"/"+image, name.WeakValidation)
+// rewriteReference adds the library/ and/or the {path}/ in registry map suffix.
+func rewriteReference(ref name.Reference, newReg name.Registry, custompath string) (name.Reference, error) {
+
+	if custompath != "" {
+		custompath = custompath + "/"
 	}
 
-	return ref, nil
+	rewrittenRepository, err := name.NewRepository(custompath + ref.Context().RepositoryStr())
+	if err != nil {
+		return nil, err
+	}
+
+	rewrittenRepository.Registry = newReg
+	switch r := ref.(type) {
+	case name.Tag:
+		r.Repository = rewrittenRepository
+		return r, nil
+	case name.Digest:
+		r.Repository = rewrittenRepository
+		return r, nil
+	default:
+		return ref, nil
+	}
+
 }
 
 func setNewRegistry(ref name.Reference, newReg name.Registry) name.Reference {

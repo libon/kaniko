@@ -82,20 +82,76 @@ func (m *mockImage) Size() (int64, error) {
 }
 
 func Test_normalizeReference(t *testing.T) {
-	expected := "index.docker.io/library/debian:latest"
-
-	ref, err := name.ParseReference(image)
-	if err != nil {
-		t.Fatal(err)
+	tests := []struct {
+		image                 string
+		newReg                string
+		custompath            string
+		expectedNormalizedRef string
+	}{
+		{
+			image:                 "debian",
+			newReg:                "newreg.io",
+			custompath:            "",
+			expectedNormalizedRef: "newreg.io/library/debian:latest",
+		},
+		{
+			image:                 "debian",
+			newReg:                "newreg.io",
+			custompath:            "subdir",
+			expectedNormalizedRef: "newreg.io/subdir/library/debian:latest",
+		},
+		{
+			image:                 "library/debian",
+			newReg:                "newreg.io",
+			custompath:            "",
+			expectedNormalizedRef: "newreg.io/library/debian:latest",
+		},
+		{
+			image:                 "library/debian",
+			newReg:                "newreg.io",
+			custompath:            "subdir",
+			expectedNormalizedRef: "newreg.io/subdir/library/debian:latest",
+		},
+		{
+			image:                 "namespace/debian",
+			newReg:                "newreg.io",
+			custompath:            "",
+			expectedNormalizedRef: "newreg.io/namespace/debian:latest",
+		},
+		{
+			image:                 "namespace/debian",
+			custompath:            "subdir",
+			newReg:                "newreg.io",
+			expectedNormalizedRef: "newreg.io/subdir/namespace/debian:latest",
+		},
+		{
+			image:                 "namespace/debian:3.0",
+			custompath:            "subdir",
+			newReg:                "newreg.io",
+			expectedNormalizedRef: "newreg.io/subdir/namespace/debian:3.0",
+		},
+		// Add more test cases here
 	}
 
-	ref2, err := normalizeReference(ref, image, "library")
-	if err != nil {
-		t.Fatal(err)
-	}
+	for _, tt := range tests {
+		t.Run(tt.image, func(t *testing.T) {
+			ref, err := name.ParseReference(tt.image)
+			if err != nil {
+				t.Fatal(err)
+			}
+			newReg, err := name.NewRegistry(tt.newReg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ref2, err := rewriteReference(ref, newReg, tt.custompath)
+			if err != nil {
+				t.Fatal(err)
+			}
 
-	if ref2.Name() != ref.Name() || ref2.Name() != expected {
-		t.Errorf("%s should have been normalized to %s, got %s", ref2.Name(), expected, ref.Name())
+			if ref2.Name() != tt.expectedNormalizedRef {
+				t.Errorf("%s should have been normalized to %s, got %s", ref.Name(), tt.expectedNormalizedRef, ref2.Name())
+			}
+		})
 	}
 }
 
