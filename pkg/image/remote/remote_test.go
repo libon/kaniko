@@ -95,10 +95,28 @@ func Test_rewriteRepository(t *testing.T) {
 			expectedRepository:  "newreg.io/library/debian",
 		},
 		{
+			repository:          "docker.io/debian",
+			newRegistry:         "newreg.io",
+			newRepositoryPrefix: "",
+			expectedRepository:  "newreg.io/library/debian",
+		},
+		{
+			repository:          "index.docker.io/debian",
+			newRegistry:         "newreg.io",
+			newRepositoryPrefix: "",
+			expectedRepository:  "newreg.io/library/debian",
+		},
+		{
+			repository:          "oldreg.io/debian",
+			newRegistry:         "newreg.io",
+			newRepositoryPrefix: "",
+			expectedRepository:  "newreg.io/debian",
+		},
+		{
 			repository:          "debian",
 			newRegistry:         "newreg.io",
-			newRepositoryPrefix: "subdir/",
-			expectedRepository:  "newreg.io/subdir/library/debian",
+			newRepositoryPrefix: "subdir1/subdir2/",
+			expectedRepository:  "newreg.io/subdir1/subdir2/library/debian",
 		},
 		{
 			repository:          "library/debian",
@@ -109,8 +127,8 @@ func Test_rewriteRepository(t *testing.T) {
 		{
 			repository:          "library/debian",
 			newRegistry:         "newreg.io",
-			newRepositoryPrefix: "subdir/",
-			expectedRepository:  "newreg.io/subdir/library/debian",
+			newRepositoryPrefix: "subdir1/subdir2/",
+			expectedRepository:  "newreg.io/subdir1/subdir2/library/debian",
 		},
 		{
 			repository:          "namespace/debian",
@@ -121,8 +139,8 @@ func Test_rewriteRepository(t *testing.T) {
 		{
 			repository:          "namespace/debian",
 			newRegistry:         "newreg.io",
-			newRepositoryPrefix: "subdir/",
-			expectedRepository:  "newreg.io/subdir/namespace/debian",
+			newRepositoryPrefix: "subdir1/subdir2/",
+			expectedRepository:  "newreg.io/subdir1/subdir2/namespace/debian",
 		},
 		// Add more test cases here
 	}
@@ -245,7 +263,25 @@ func Test_ParseRegistryMapping(t *testing.T) {
 		},
 		{
 			name:                     "Test case 2",
+			registryMapping:          "registry.example.com/namespace/",
+			expectedRegistry:         "registry.example.com",
+			expectedRepositoryPrefix: "namespace/",
+		},
+		{
+			name:                     "Test case 3",
+			registryMapping:          "registry.example.com/subdir1/subdir2",
+			expectedRegistry:         "registry.example.com",
+			expectedRepositoryPrefix: "subdir1/subdir2/",
+		},
+		{
+			name:                     "Test case 4",
 			registryMapping:          "registry.example.com",
+			expectedRegistry:         "registry.example.com",
+			expectedRepositoryPrefix: "",
+		},
+		{
+			name:                     "Test case 5",
+			registryMapping:          "registry.example.com/",
 			expectedRegistry:         "registry.example.com",
 			expectedRepositoryPrefix: "",
 		},

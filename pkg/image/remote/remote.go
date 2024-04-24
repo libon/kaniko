@@ -109,7 +109,7 @@ func RetrieveRemoteImage(image string, opts config.RegistryOptions, customPlatfo
 	return remoteImage, err
 }
 
-// rewriteReference adds the library/ and/or the {path}/ in registry map suffix.
+// rewriteRepository adds the {repositoryPrefix}/ to the original repo, and normalizes with an additional library/ if necessary
 func rewriteRepository(repo name.Repository, regToMapTo string, repositoryPrefix string, insecurePull bool) (name.Repository, error) {
 	if insecurePull {
 		return name.NewRepository(repositoryPrefix+repo.RepositoryStr(), name.WithDefaultRegistry(regToMapTo), name.WeakValidation, name.Insecure)
@@ -174,7 +174,8 @@ func parseRegistryMapping(regMapping string) (string, string) {
 	// Join all remaining segments
 	repositoryPrefix := strings.Join(segments[1:], "/")
 
-	if repositoryPrefix != "" {
+	// Normalize with a trailing slash if not empty
+	if repositoryPrefix != "" && !strings.HasSuffix(repositoryPrefix, "/") {
 		repositoryPrefix = repositoryPrefix + "/"
 	}
 
