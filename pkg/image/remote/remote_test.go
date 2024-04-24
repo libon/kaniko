@@ -81,75 +81,65 @@ func (m *mockImage) Size() (int64, error) {
 	return 0, nil
 }
 
-func Test_normalizeReference(t *testing.T) {
+func Test_rewriteRepository(t *testing.T) {
 	tests := []struct {
-		image                 string
-		newReg                string
-		custompath            string
-		expectedNormalizedRef string
+		repository          string
+		newRegistry         string
+		newRepositoryPrefix string
+		expectedRepository  string
 	}{
 		{
-			image:                 "debian",
-			newReg:                "newreg.io",
-			custompath:            "",
-			expectedNormalizedRef: "newreg.io/library/debian:latest",
+			repository:          "debian",
+			newRegistry:         "newreg.io",
+			newRepositoryPrefix: "",
+			expectedRepository:  "newreg.io/library/debian",
 		},
 		{
-			image:                 "debian",
-			newReg:                "newreg.io",
-			custompath:            "subdir",
-			expectedNormalizedRef: "newreg.io/subdir/library/debian:latest",
+			repository:          "debian",
+			newRegistry:         "newreg.io",
+			newRepositoryPrefix: "subdir/",
+			expectedRepository:  "newreg.io/subdir/library/debian",
 		},
 		{
-			image:                 "library/debian",
-			newReg:                "newreg.io",
-			custompath:            "",
-			expectedNormalizedRef: "newreg.io/library/debian:latest",
+			repository:          "library/debian",
+			newRegistry:         "newreg.io",
+			newRepositoryPrefix: "",
+			expectedRepository:  "newreg.io/library/debian",
 		},
 		{
-			image:                 "library/debian",
-			newReg:                "newreg.io",
-			custompath:            "subdir",
-			expectedNormalizedRef: "newreg.io/subdir/library/debian:latest",
+			repository:          "library/debian",
+			newRegistry:         "newreg.io",
+			newRepositoryPrefix: "subdir/",
+			expectedRepository:  "newreg.io/subdir/library/debian",
 		},
 		{
-			image:                 "namespace/debian",
-			newReg:                "newreg.io",
-			custompath:            "",
-			expectedNormalizedRef: "newreg.io/namespace/debian:latest",
+			repository:          "namespace/debian",
+			newRegistry:         "newreg.io",
+			newRepositoryPrefix: "",
+			expectedRepository:  "newreg.io/namespace/debian",
 		},
 		{
-			image:                 "namespace/debian",
-			custompath:            "subdir",
-			newReg:                "newreg.io",
-			expectedNormalizedRef: "newreg.io/subdir/namespace/debian:latest",
-		},
-		{
-			image:                 "namespace/debian:3.0",
-			custompath:            "subdir",
-			newReg:                "newreg.io",
-			expectedNormalizedRef: "newreg.io/subdir/namespace/debian:3.0",
+			repository:          "namespace/debian",
+			newRegistry:         "newreg.io",
+			newRepositoryPrefix: "subdir/",
+			expectedRepository:  "newreg.io/subdir/namespace/debian",
 		},
 		// Add more test cases here
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.image, func(t *testing.T) {
-			ref, err := name.ParseReference(tt.image)
+		t.Run(tt.repository, func(t *testing.T) {
+			repo, err := name.NewRepository(tt.repository)
 			if err != nil {
 				t.Fatal(err)
 			}
-			newReg, err := name.NewRegistry(tt.newReg)
-			if err != nil {
-				t.Fatal(err)
-			}
-			ref2, err := rewriteReference(ref, newReg, tt.custompath)
+			repo2, err := rewriteRepository(repo, tt.newRegistry, tt.newRepositoryPrefix, false)
 			if err != nil {
 				t.Fatal(err)
 			}
 
-			if ref2.Name() != tt.expectedNormalizedRef {
-				t.Errorf("%s should have been normalized to %s, got %s", ref.Name(), tt.expectedNormalizedRef, ref2.Name())
+			if repo2.Name() != tt.expectedRepository {
+				t.Errorf("%s should have been normalized to %s, got %s", repo.Name(), tt.expectedRepository, repo2.Name())
 			}
 		})
 	}
@@ -186,7 +176,7 @@ func Test_RetrieveRemoteImage_skipFallback(t *testing.T) {
 	}
 
 	if _, err := RetrieveRemoteImage(image, opts, ""); err != nil {
-		t.Fatal("Expected call to succeed because fallback to default registry")
+		t.Fatalf("Expected call to succeed because fallback to default registry")
 	}
 
 	opts.SkipDefaultRegistryFallback = true
@@ -240,36 +230,36 @@ func Test_NoRetryRetrieveRemoteImageFails(t *testing.T) {
 	}
 }
 
-func Test_ExtractPathFromRegistryURL(t *testing.T) {
+func Test_ParseRegistryMapping(t *testing.T) {
 	tests := []struct {
-		name                string
-		regFullURL          string
-		expectedRegistry    string
-		expectedImagePrefix string
+		name                     string
+		registryMapping          string
+		expectedRegistry         string
+		expectedRepositoryPrefix string
 	}{
 		{
-			name:                "Test case 1",
-			regFullURL:          "registry.example.com/namespace",
-			expectedRegistry:    "registry.example.com",
-			expectedImagePrefix: "namespace",
+			name:                     "Test case 1",
+			registryMapping:          "registry.example.com/namespace",
+			expectedRegistry:         "registry.example.com",
+			expectedRepositoryPrefix: "namespace/",
 		},
 		{
-			name:                "Test case 2",
-			regFullURL:          "registry.example.com",
-			expectedRegistry:    "registry.example.com",
-			expectedImagePrefix: "",
+			name:                     "Test case 2",
+			registryMapping:          "registry.example.com",
+			expectedRegistry:         "registry.example.com",
+			expectedRepositoryPrefix: "",
 		},
 		// Add more test cases here
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			path, registry := extractPathFromRegistryURL(tt.regFullURL)
+			registry, repositoryPrefix := parseRegistryMapping(tt.registryMapping)
 			if registry != tt.expectedRegistry {
-				t.Errorf("Expected path: %s, but got: %s", tt.expectedRegistry, registry)
+				t.Errorf("Expected registry: %s, but got: %s", tt.expectedRegistry, registry)
 			}
-			if path != tt.expectedImagePrefix {
-				t.Errorf("Expected repo: %s, but got: %s", tt.expectedImagePrefix, path)
+			if repositoryPrefix != tt.expectedRepositoryPrefix {
+				t.Errorf("Expected repoPrefix: %s, but got: %s", tt.expectedRepositoryPrefix, repositoryPrefix)
 			}
 		})
 	}

@@ -52,34 +52,25 @@ func RetrieveRemoteImage(image string, opts config.RegistryOptions, customPlatfo
 	}
 
 	if newRegURLs, found := opts.RegistryMaps[ref.Context().RegistryStr()]; found {
-		for _, regToMapTo := range newRegURLs {
+		for _, registryMapping := range newRegURLs {
 
-			//extract custom path if any in all registry map and clean regToMapTo to only the registry without the path
-			custompath, regToMapTo := extractPathFromRegistryURL(regToMapTo)
+			regToMapTo, repositoryPrefix := parseRegistryMapping(registryMapping)
 
-			var newReg name.Registry
-			if opts.InsecurePull || opts.InsecureRegistries.Contains(regToMapTo) {
-				newReg, err = name.NewRegistry(regToMapTo, name.WeakValidation, name.Insecure)
-			} else {
-				newReg, err = name.NewRegistry(regToMapTo, name.StrictValidation)
-			}
+			insecurePull := opts.InsecurePull || opts.InsecureRegistries.Contains(regToMapTo)
+
+			rewrittenRepository, err := rewriteRepository(ref.Context(), regToMapTo, repositoryPrefix, insecurePull)
 			if err != nil {
 				return nil, err
 			}
-			//rewrite reference is call in every fallback to ensure that the image is normalized to the new registry including the image prefix
-			var rewrittenRef name.Reference
-			rewrittenRef, err = rewriteReference(ref, newReg, custompath)
 
-			if err != nil {
-				return nil, err
-			}
-			logrus.Infof("Retrieving image %s from mapped registry %s", ref, regToMapTo)
+			rewrittenRef := setNewRepository(ref, rewrittenRepository)
+
+			logrus.Infof("Retrieving image %s from mapped registry %s", rewrittenRef, regToMapTo)
 			retryFunc := func() (v1.Image, error) {
 				return remoteImageFunc(rewrittenRef, remoteOptions(regToMapTo, opts, customPlatform)...)
 			}
 
 			var remoteImage v1.Image
-			var err error
 			if remoteImage, err = util.RetryWithResult(retryFunc, opts.ImageDownloadRetry, 1000); err != nil {
 				logrus.Warnf("Failed to retrieve image %s from remapped registry %s: %s. Will try with the next registry, or fallback to the original registry.", rewrittenRef, regToMapTo, err)
 				continue
@@ -119,29 +110,25 @@ func RetrieveRemoteImage(image string, opts config.RegistryOptions, customPlatfo
 }
 
 // rewriteReference adds the library/ and/or the {path}/ in registry map suffix.
-func rewriteReference(ref name.Reference, newReg name.Registry, custompath string) (name.Reference, error) {
-
-	if custompath != "" {
-		custompath = custompath + "/"
+func rewriteRepository(repo name.Repository, regToMapTo string, repositoryPrefix string, insecurePull bool) (name.Repository, error) {
+	if insecurePull {
+		return name.NewRepository(repositoryPrefix+repo.RepositoryStr(), name.WithDefaultRegistry(regToMapTo), name.WeakValidation, name.Insecure)
+	} else {
+		return name.NewRepository(repositoryPrefix+repo.RepositoryStr(), name.WithDefaultRegistry(regToMapTo), name.WeakValidation)
 	}
+}
 
-	rewrittenRepository, err := name.NewRepository(custompath + ref.Context().RepositoryStr())
-	if err != nil {
-		return nil, err
-	}
-
-	rewrittenRepository.Registry = newReg
+func setNewRepository(ref name.Reference, newRepo name.Repository) name.Reference {
 	switch r := ref.(type) {
 	case name.Tag:
-		r.Repository = rewrittenRepository
-		return r, nil
+		r.Repository = newRepo
+		return r
 	case name.Digest:
-		r.Repository = rewrittenRepository
-		return r, nil
+		r.Repository = newRepo
+		return r
 	default:
-		return ref, nil
+		return ref
 	}
-
 }
 
 func setNewRegistry(ref name.Reference, newReg name.Registry) name.Reference {
@@ -175,16 +162,21 @@ func remoteOptions(registryName string, opts config.RegistryOptions, customPlatf
 	return []remote.Option{remote.WithTransport(tr), remote.WithAuthFromKeychain(creds.GetKeychain()), remote.WithPlatform(*platform)}
 }
 
-// Parse the registry URL
-// example: regURL = "registry.example.com/namespace/repo:tag" will return namespace/repo
-func extractPathFromRegistryURL(regFullURL string) (string, string) {
-	// Split the regURL by slashes
-	// becaues the registry url is write without scheme, we just need to remove the first one
-	segments := strings.Split(regFullURL, "/")
-	// Join all segments except the first one (which is typically empty)
-	path := strings.Join(segments[1:], "/")
-	// get the fist segment to get the registry url
+// Parse the registry mapping
+// example: regMapping = "registry.example.com/namespace/repo" will return registry.example.com and namespace/repo/
+func parseRegistryMapping(regMapping string) (string, string) {
+	// Split the registry mapping by slashes
+	segments := strings.Split(regMapping, "/")
+
+	// Get the first segment to get the registry url
 	regURL := segments[0]
 
-	return path, regURL
+	// Join all remaining segments
+	repositoryPrefix := strings.Join(segments[1:], "/")
+
+	if repositoryPrefix != "" {
+		repositoryPrefix = repositoryPrefix + "/"
+	}
+
+	return regURL, repositoryPrefix
 }
